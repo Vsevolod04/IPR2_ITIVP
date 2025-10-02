@@ -1,4 +1,12 @@
 <?php
+//Чтение данных из файла переменных окружения
+$lines = file(".env", FILE_SKIP_EMPTY_LINES | FILE_USE_INCLUDE_PATH);
+foreach ($lines as $line) {
+    [$key, $value] = explode('=', $line, 2);
+    $key = trim($key);
+    $value = trim($value);
+    putenv(sprintf('%s=%s', $key, $value));
+}
 
 class Database
 {
@@ -8,9 +16,9 @@ class Database
     private  $conn = null;
 
     public function __construct(
-        $host = "mysql:host=localhost;dbname=api_db",
-        $user = "root",
-        $password = "admin"
+        $host = "host",
+        $user = "user",
+        $password = "password"
     ) {
         $this->host = $host;
         $this->password = $password;
@@ -25,7 +33,6 @@ class Database
                 $conn = new PDO($this->host, $this->user, $this->password);
                 $this->conn = $conn;
             } catch (PDOException $e) {
-                echo $e->getMessage();
                 return null;
             }
         }

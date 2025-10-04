@@ -12,7 +12,7 @@ function errorResponse(int $code, $message)
 }
 
 $method = $_SERVER["REQUEST_METHOD"];
-$api_key = getallheaders()["Api"];
+$api_key = getallheaders()["Api"] ?? 0;
 $url_fragments = explode('/', parse_url($_SERVER["REQUEST_URI"], PHP_URL_PATH));
 
 $conn = (new Database(getenv("DB_HOST"), getenv("DB_USER"), getenv("DB_PASSWORD")))->getConnection();
@@ -24,84 +24,204 @@ if ($conn == null) {
 
 $auth = new Auth($api_key, $conn);
 //Проверка ключа api
-if ($auth->check_api_key()) {
-    $chg_user = $auth->getId();
-
-    switch ($method) {
-        case "POST":
-            $data = json_decode(file_get_contents("php://input"), true);
-
-            //Если неверное тело запроса
-            if ($data == null) {
-                errorResponse(400, "Not appropriate request body");
-                exit();
-            } elseif (!isset(
-                $data["title"],
-                $data["instructor"],
-                $data["duration_hours"],
-                $data["price"]
-            )) {
-                errorResponse(400, "Necessary params are missed");
-                exit();
-            }
-
-            //Получение будущего id для последующего возврата клиенту новой записи
-            $new_id = null;
-            $conn->query("SET information_schema_stats_expiry = 0"); //для обновления системной таблицы
-            $auto_inc = $conn->query("SELECT AUTO_INCREMENT
-                FROM information_schema.TABLES
-                WHERE TABLE_SCHEMA = 'api_db' AND TABLE_NAME = 'courses'");
-            $new_id = ($auto_inc->fetch(PDO::FETCH_ASSOC))["AUTO_INCREMENT"];
-
-            try {
-                $stmt = $conn->prepare(
-                    "INSERT courses (title, instructor, duration_hours, price, change_user) 
-                    VALUES (?, ?, ?, ?, ?)"
-                );
-                $stmt->bindParam(1, $data["title"], PDO::PARAM_STR);
-                $stmt->bindParam(2, $data["instructor"], PDO::PARAM_STR);
-                $stmt->bindParam(3, $data["duration_hours"], PDO::PARAM_INT);
-                $stmt->bindParam(4, $data["price"]);
-                $stmt->bindParam(5, $chg_user, PDO::PARAM_INT);
-                $stmt->execute();
-            } catch (PDOException $e) {
-                errorResponse(400, "Unapproriate values of params");
-                exit();
-            }
-
-            $new_data = $conn->query("SELECT * FROM courses WHERE id = " . $new_id)->fetch(PDO::FETCH_ASSOC);
-
-            http_response_code(201);
-            echo json_encode([
-                "message" => "Course added successfully",
-                "course" => array(
-                    "id" => $new_data["id"],
-                    "title" => $new_data["title"],
-                    "instructor" => $new_data["instructor"],
-                    "duration_hours" => $new_data["duration_hours"],
-                    "price" => $new_data["price"],
-                    "change_user" => $new_data["change_user"]
-                )
-            ]);
-            break;
-
-        case "GET":
-
-            break;
-
-        case "PUT":
-            $data = json_decode(file_get_contents("php://input"), true);
-            break;
-
-        case "DELETE":
-
-            break;
-
-        default:
-            errorResponse(405, "Method " . $method . "is not allowed");
-            exit();
-    }
-} else {
+if (!$auth->check_api_key()) {
     errorResponse(401, "Not valid API key");
     exit();
+}
+
+//Id владельца api ключа
+$chg_user = $auth->getId();
+
+//Обработка запросов
+switch ($method) {
+    case "POST":
+        $data = json_decode(file_get_contents("php://input"), true);
+
+        //Если неверное тело запроса
+        if ($data == null) {
+            errorResponse(400, "Not appropriate request body");
+            exit();
+        } elseif (!isset(
+            $data["title"],
+            $data["instructor"],
+            $data["duration_hours"],
+            $data["price"]
+        )) {
+            errorResponse(400, "Necessary params are missed");
+            exit();
+        }
+
+        //Получение будущего id для последующего возврата клиенту новой записи
+        $new_id = null;
+        $conn->query("SET information_schema_stats_expiry = 0"); //для обновления системной таблицы
+        $auto_inc = $conn->query("SELECT AUTO_INCREMENT
+                FROM information_schema.TABLES
+                WHERE TABLE_SCHEMA = 'api_db' AND TABLE_NAME = 'courses'");
+        $new_id = ($auto_inc->fetch(PDO::FETCH_ASSOC))["AUTO_INCREMENT"];
+
+        try {
+            $stmt = $conn->prepare(
+                "INSERT courses (title, instructor, duration_hours, price, change_user) 
+                    VALUES (?, ?, ?, ?, ?)"
+            );
+            $stmt->bindParam(1, $data["title"], PDO::PARAM_STR);
+            $stmt->bindParam(2, $data["instructor"], PDO::PARAM_STR);
+            $stmt->bindParam(3, $data["duration_hours"], PDO::PARAM_INT);
+            $stmt->bindParam(4, $data["price"]);
+            $stmt->bindParam(5, $chg_user, PDO::PARAM_INT);
+            $stmt->execute();
+        } catch (PDOException $e) {
+            errorResponse(400, "Unapproriate values of params");
+            exit();
+        }
+
+        $new_data = $conn->query("SELECT * FROM courses WHERE id = " . $new_id)->fetch(PDO::FETCH_ASSOC);
+
+        http_response_code(201);
+        echo json_encode([
+            "message" => "Course added successfully",
+            "course" => array(
+                "id" => $new_data["id"],
+                "title" => $new_data["title"],
+                "instructor" => $new_data["instructor"],
+                "duration_hours" => $new_data["duration_hours"],
+                "price" => $new_data["price"],
+                "change_user" => $new_data["change_user"]
+            )
+        ]);
+        break;
+
+    case "GET":
+        //Получить весь список
+        if (sizeof($url_fragments) == 3) {
+            $data =  $conn->query("SELECT * FROM courses");
+            $courses = array();
+            while ($course = $data->fetch()) {
+                $courses[] = [
+                    "id" => $course["id"],
+                    "title" => $course["title"],
+                    "instructor" => $course["instructor"],
+                    "duration_hours" => $course["duration_hours"],
+                    "price" => $course["price"],
+                    "change_user" => $course["change_user"]
+                ];
+            }
+            http_response_code(200);
+            echo json_encode([
+                "message" => "Content received successfully",
+                "courses" => $courses
+            ]);
+            //Курс по id
+        } elseif (sizeof($url_fragments) == 4 && is_numeric($url_fragments[3])) {
+            $data =  $conn->query("SELECT * FROM courses WHERE id = " . $url_fragments[3]);
+            $course = $data->fetch();
+
+            if ($course != null) {
+                http_response_code(200);
+                echo json_encode([
+                    "message" => "Content received successfully",
+                    "course" => array(
+                        "id" => $course["id"],
+                        "title" => $course["title"],
+                        "instructor" => $course["instructor"],
+                        "duration_hours" => $course["duration_hours"],
+                        "price" => $course["price"],
+                        "change_user" => $course["change_user"]
+                    )
+                ]);
+            } else {
+                errorResponse(404, "Course is not found");
+            }
+        } else {
+            errorResponse(404, "Invalid URL");
+        }
+        break;
+
+    case "PUT":
+        $data = json_decode(file_get_contents("php://input"), true);
+
+        //Получение  id из url
+        $upd_id = $url_fragments[3] ?? null;
+
+        if ($upd_id == null) {
+            errorResponse(400, "Invalid URL for POST request");
+            exit();
+        }
+
+        //Если неверное тело запроса
+        if ($data == null) {
+            errorResponse(400, "Not appropriate request body");
+            exit();
+        } elseif (!isset(
+            $data["title"],
+            $data["instructor"],
+            $data["duration_hours"],
+            $data["price"]
+        )) {
+            errorResponse(400, "Necessary params are missed");
+            exit();
+        }
+
+        try {
+            $stmt = $conn->prepare(
+                "UPDATE courses (title, instructor, duration_hours, price, change_user) 
+                    SET (title = ?,
+                        instructor = ?,
+                        duration_hours = ?,
+                        price = ?,
+                        change_user = ?)
+                    WHERE id = ?"
+            );
+            $stmt->bindParam(1, $data["title"], PDO::PARAM_STR);
+            $stmt->bindParam(2, $data["instructor"], PDO::PARAM_STR);
+            $stmt->bindParam(3, $data["duration_hours"], PDO::PARAM_INT);
+            $stmt->bindParam(4, $data["price"]);
+            $stmt->bindParam(5, $chg_user, PDO::PARAM_INT);
+            $affectedRows = $stmt->execute();
+        } catch (PDOException $e) {
+            errorResponse(400, "Unapproriate values of params");
+            exit();
+        }
+
+        if ($affectedRows < 1) {
+            errorResponse(404, "Such course is not exists");
+            exit();
+        }
+
+        $new_data = $conn->query("SELECT * FROM courses WHERE id = " . $upd_id)->fetch(PDO::FETCH_ASSOC);
+
+        http_response_code(201);
+        echo json_encode([
+            "message" => "Course updated successfully",
+            "course" => array(
+                "id" => $new_data["id"],
+                "title" => $new_data["title"],
+                "instructor" => $new_data["instructor"],
+                "duration_hours" => $new_data["duration_hours"],
+                "price" => $new_data["price"],
+                "change_user" => $new_data["change_user"]
+            )
+        ]);
+        break;
+
+    case "DELETE":
+        $del_id = $url_fragments[3] ?? null;
+        if ($del_id == null) {
+            errorResponse(400, "Invalid URL for DELETE request");
+            exit();
+        }
+
+        $affectedRows = $conn->query("DELETE FROM courses WHERE id = " . $url_fragments[3]);
+        if ($affectedRows < 1) {
+            errorResponse(404, "Such course is not exists");
+            exit();
+        }
+
+        http_response_code(200);
+        echo json_encode(["message" => "Course deleted successfully"]);
+        break;
+
+    default:
+        errorResponse(405, "Method " . $method . "is not allowed");
+        exit();
 }

@@ -1,5 +1,6 @@
 DirectoryIndex index.php
 ErrorDocument 404 /404.json
+ErrorDocument 405 /404.json
 
 RewriteEngine On
 

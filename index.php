@@ -148,6 +148,14 @@ switch ($method) {
             exit();
         }
 
+        //Проверка существования курса
+        $data =  $conn->query("SELECT * FROM courses WHERE id = " . $url_fragments[3]);
+        $course = $data->fetch();
+        if ($course == null) {
+            errorResponse(404, "Course is not found");
+            exit();
+        }
+
         //Если неверное тело запроса
         if ($data == null) {
             errorResponse(400, "Not appropriate request body");
@@ -162,14 +170,20 @@ switch ($method) {
             exit();
         }
 
+        //Ошибки в числовых параметрах
+        if (!is_numeric($data["duration_hours"]) || !is_numeric($data["price"])) {
+            errorResponse(400, "Unapproriate values of params");
+            exit();
+        }
+
         try {
             $stmt = $conn->prepare(
-                "UPDATE courses (title, instructor, duration_hours, price, change_user) 
-                    SET (title = ?,
+                "UPDATE courses 
+                    SET title = ?,
                         instructor = ?,
                         duration_hours = ?,
                         price = ?,
-                        change_user = ?)
+                        change_user = ?
                     WHERE id = ?"
             );
             $stmt->bindParam(1, $data["title"], PDO::PARAM_STR);
@@ -177,14 +191,10 @@ switch ($method) {
             $stmt->bindParam(3, $data["duration_hours"], PDO::PARAM_INT);
             $stmt->bindParam(4, $data["price"]);
             $stmt->bindParam(5, $chg_user, PDO::PARAM_INT);
-            $affectedRows = $stmt->execute();
+            $stmt->bindParam(6, $upd_id, PDO::PARAM_INT);
+            $stmt->execute();
         } catch (PDOException $e) {
             errorResponse(400, "Unapproriate values of params");
-            exit();
-        }
-
-        if ($affectedRows < 1) {
-            errorResponse(404, "Such course is not exists");
             exit();
         }
 
@@ -192,7 +202,7 @@ switch ($method) {
 
         http_response_code(201);
         echo json_encode([
-            "message" => "Course updated successfully",
+            "message" => "Course updated successfully" . $affectedRows,
             "course" => array(
                 "id" => $new_data["id"],
                 "title" => $new_data["title"],
@@ -211,17 +221,21 @@ switch ($method) {
             exit();
         }
 
-        $affectedRows = $conn->query("DELETE FROM courses WHERE id = " . $url_fragments[3]);
-        if ($affectedRows < 1) {
-            errorResponse(404, "Such course is not exists");
+        //Проверка существования курса
+        $data =  $conn->query("SELECT * FROM courses WHERE id = " . $url_fragments[3]);
+        $course = $data->fetch();
+        if ($course == null) {
+            errorResponse(404, "Course is not found");
             exit();
         }
+
+        $conn->query("DELETE FROM courses WHERE id = " . $url_fragments[3]);
 
         http_response_code(200);
         echo json_encode(["message" => "Course deleted successfully"]);
         break;
 
     default:
-        errorResponse(405, "Method " . $method . "is not allowed");
+        errorResponse(405, "Method " . $method . " is not allowed");
         exit();
 }

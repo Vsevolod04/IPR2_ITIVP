@@ -148,14 +148,6 @@ switch ($method) {
             exit();
         }
 
-        //Проверка существования курса
-        $data =  $conn->query("SELECT * FROM courses WHERE id = " . $url_fragments[3]);
-        $course = $data->fetch();
-        if ($course == null) {
-            errorResponse(404, "Course is not found");
-            exit();
-        }
-
         //Если неверное тело запроса
         if ($data == null) {
             errorResponse(400, "Not appropriate request body");
@@ -173,6 +165,14 @@ switch ($method) {
         //Ошибки в числовых параметрах
         if (!is_numeric($data["duration_hours"]) || !is_numeric($data["price"])) {
             errorResponse(400, "Unapproriate values of params");
+            exit();
+        }
+
+        //Проверка существования курса
+        $db_data =  $conn->query("SELECT * FROM courses WHERE id = " . $url_fragments[3]);
+        $course = $db_data->fetch();
+        if ($course == null) {
+            errorResponse(404, "Course is not found");
             exit();
         }
 
@@ -202,7 +202,7 @@ switch ($method) {
 
         http_response_code(201);
         echo json_encode([
-            "message" => "Course updated successfully" . $affectedRows,
+            "message" => "Course updated successfully",
             "course" => array(
                 "id" => $new_data["id"],
                 "title" => $new_data["title"],
